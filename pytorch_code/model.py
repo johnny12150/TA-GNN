@@ -87,10 +87,10 @@ class SessionGraph(Module):
         vt = self.W(hidden)
         cos_sim = torch.matmul(b_n, vt.transpose(2, 1))  # n_nodes x seq_len
         beta = F.softmax(cos_sim, dim=1)
-        vt = torch.sum(torch.matmul(beta, vt), 1)  # (?, N, d), 應該是錯的
-        # vt = torch.matmul(beta, vt)  # (?, N, d), 每個item有自己的session embedding
-        # fixme shape不對
-        # vt = torch.sum(beta * vt * mask.view(mask.shape[0], -1, 1), 1)  # 不看padding的部分
+        # vt = torch.sum(torch.matmul(beta, vt), 1)  # todo 應該是錯的
+        vt = torch.matmul(beta, vt)  # (?, N, d), 每個item有自己的session embedding
+        # vt = torch.sum(beta * vt * mask.view(mask.shape[0], -1, 1), 1)  # 不看padding的部分, fixme shape不對
+        del b_n
 
         # global attention
         ht = hidden[torch.arange(mask.shape[0]).long(), torch.sum(mask, 1) - 1]  # batch_size x latent_size
@@ -99,14 +99,15 @@ class SessionGraph(Module):
         alpha = self.linear_q(torch.sigmoid(q1 + q2))
         a = torch.sum(alpha * hidden * mask.view(mask.shape[0], -1, 1).float(), 1)
         # concat local, global and target embedding
-        # ht_n = ht.repeat_interleave(b.shape[0], 1).view(hidden.shape[0], -1, hidden.shape[-1])
-        # a_n = a.repeat_interleave(b.shape[0], 1).view(hidden.shape[0], -1, hidden.shape[-1])
-        # st = torch.cat([vt, ht_n, a_n], dim=-1)  # (?, N, 3d)
-        st = torch.cat([vt, ht, a], dim=-1)
+        ht_n = ht.repeat_interleave(b.shape[0], 1).view(hidden.shape[0], -1, hidden.shape[-1])
+        a_n = a.repeat_interleave(b.shape[0], 1).view(hidden.shape[0], -1, hidden.shape[-1])
+        st = torch.cat([vt, ht_n, a_n], dim=-1)  # (?, N, 3d)
+        del ht_n, a_n
+        # st = torch.cat([vt, ht, a], dim=-1)
         a = self.linear_three(st)  # (?, N, d)
 
-        scores = torch.matmul(a, b.transpose(1, 0))  # b shape: (N, d), 應該是錯的
-        # scores = torch.einsum('ijk,jk->ij', a, b)  # b shape: (N, d)
+        # scores = torch.matmul(a, b.transpose(1, 0))  # todo 應該是錯的
+        scores = torch.einsum('ijk,jk->ij', a, b)  # b shape: (N, d)
         return scores  # (?, N)
 
     def forward(self, inputs, A):
